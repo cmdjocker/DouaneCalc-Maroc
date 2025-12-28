@@ -7,23 +7,21 @@ import { InvoiceData } from "../types";
  */
 export const getExchangeRate = async (from: string, to: string = 'MAD'): Promise<number> => {
   try {
-    // Frankfurter is a free service for current and historical exchange rates
     const response = await fetch(`https://api.frankfurter.app/latest?from=${from}&to=${to}`);
     if (!response.ok) throw new Error('Exchange rate service unavailable');
     const data = await response.json();
     return data.rates[to] || 10.5;
   } catch (error) {
     console.warn("Falling back to estimated rate due to network error:", error);
-    return 10.5; // Standard fallback for EUR/MAD
+    return 10.5; 
   }
 };
 
 /**
  * Uses Gemini 3 Flash to analyze the invoice image/PDF.
- * Flash is used because it's fast and has a generous free tier.
  */
 export const extractInvoiceData = async (base64Image: string, mimeType: string): Promise<InvoiceData> => {
-  // The API key is injected by the platform environment
+  // CRITICAL: Create new instance inside function to use the most up-to-date API key
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const response = await ai.models.generateContent({
@@ -45,10 +43,10 @@ export const extractInvoiceData = async (base64Image: string, mimeType: string):
              - Commercial goods/products = '023'.
              - Pallets, crates, or packaging mentioned as line items = '312'.
           2. WEIGHTS: 
-             - Extract 'Poids Net' for each item if available.
+             - Extract 'Poids Net' for each item.
              - Extract 'Poids Brut Total' for the whole shipment.
           3. INCOTERM: Detect FOB, CFR, CIF, EXW, etc. (Default to FOB if unclear).
-          4. HS CODES: Assign 10-digit Moroccan HS Codes (SH) based on descriptions.
+          4. HS CODES: Assign 10-digit Moroccan HS Codes based on item descriptions.
           5. PACKAGING: For regime '312' items, count 'caisses' (boxes) and 'palettes'.
           
           Return JSON format only.`
@@ -95,12 +93,12 @@ export const extractInvoiceData = async (base64Image: string, mimeType: string):
 
   const text = response.text;
   if (!text) {
-    throw new Error("L'IA n'a pas pu lire le document. Assurez-vous que l'image est nette et bien éclairée.");
+    throw new Error("L'IA n'a pas pu lire le document. Vérifiez la connexion API.");
   }
 
   try {
     return JSON.parse(text) as InvoiceData;
   } catch (e) {
-    throw new Error("Erreur de formatage des données. Veuillez réessayer avec une autre capture.");
+    throw new Error("Erreur de formatage des données. Veuillez réessayer.");
   }
 };

@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ThemeToggle } from './components/ThemeToggle';
 import { extractInvoiceData, getExchangeRate } from './services/geminiService';
 import { InvoiceData, CustomsResult, RegimeResult, HSCodeBreakdown } from './types';
@@ -15,7 +15,7 @@ const REGIME_LABELS: Record<string, string> = {
   '040': 'MAC en suite d\'ATPA'
 };
 
-const ACONAGE_FIXED_MAD = 2300; // Fixed estimate for port handling
+const ACONAGE_FIXED_MAD = 2300; 
 
 const App: React.FC = () => {
   const [loading, setLoading] = useState(false);
@@ -24,6 +24,30 @@ const App: React.FC = () => {
   const [invoice, setInvoice] = useState<InvoiceData | null>(null);
   const [results, setResults] = useState<CustomsResult | null>(null);
   const [exchangeRate, setExchangeRate] = useState<number>(10.5);
+  const [hasKey, setHasKey] = useState<boolean>(false);
+
+  // Check for existing API key selection
+  useEffect(() => {
+    const checkKey = async () => {
+      if ((window as any).aistudio) {
+        const selected = await (window as any).aistudio.hasSelectedApiKey();
+        setHasKey(selected);
+      }
+    };
+    checkKey();
+  }, []);
+
+  const handleConnectKey = async () => {
+    if ((window as any).aistudio) {
+      try {
+        await (window as any).aistudio.openSelectKey();
+        setHasKey(true); // Assume success per instructions
+        setError(null);
+      } catch (err) {
+        console.error("Failed to open key selection:", err);
+      }
+    }
+  };
 
   const calculateCustoms = useCallback((data: InvoiceData, rate: number) => {
     const totalFobMAD = data.subtotal * rate;
@@ -62,7 +86,7 @@ const App: React.FC = () => {
         } else if (regime === '312') {
           const c = items.reduce((sum, i) => sum + (i.packagingCaisses || 0), 0);
           const p = items.reduce((sum, i) => sum + (i.packagingPalettes || 0), 0);
-          weightHS = (c * 2) + (p * 25); // Standard ADII weight estimates for packaging
+          weightHS = (c * 2) + (p * 25); 
         } else {
           weightHS = netWeightHS;
         }
@@ -84,7 +108,7 @@ const App: React.FC = () => {
         }
 
         const aconageHS = weightHS * globalAconageRatio;
-        const assuranceHS = (fobHS + fretHSValueForVAD) * 0.005; // 0.5% standard
+        const assuranceHS = (fobHS + fretHSValueForVAD) * 0.005;
 
         return {
           hsCode,
@@ -123,7 +147,7 @@ const App: React.FC = () => {
       exchangeRate: rate,
       incoterm: data.incoterm,
       totalFobMAD,
-      totalFretMAD: totalFretMAD,
+      totalFretMAD,
       totalAssuranceMAD: breakdown.reduce((s, r) => s + r.assuranceValueMAD, 0),
       totalAconageMAD: breakdown.reduce((s, r) => s + r.aconageValueMAD, 0),
       totalWeightBrut: totalWeightBrut,
@@ -133,6 +157,10 @@ const App: React.FC = () => {
   }, []);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!hasKey) {
+      await handleConnectKey();
+    }
+
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -152,7 +180,12 @@ const App: React.FC = () => {
         calculateCustoms(data, rate);
       } catch (err: any) {
         console.error("Analysis error:", err);
-        setError(err.message || "L'analyse a échoué. Vérifiez la qualité de l'image.");
+        if (err.message?.includes("API Key")) {
+          setHasKey(false);
+          setError("Clé API non trouvée. Veuillez cliquer sur 'Connecter API' en haut.");
+        } else {
+          setError(err.message || "L'analyse a échoué. Vérifiez la qualité de l'image.");
+        }
       } finally {
         setLoading(false);
       }
@@ -179,10 +212,15 @@ const App: React.FC = () => {
       // @ts-ignore
       const html2pdfLib = window.html2pdf;
       const opt = {
-        margin: [5, 5, 5, 5],
-        filename: `Rapport_VAD_${invoice?.invoiceNumber || 'Douane'}.pdf`,
+        margin: [10, 10, 10, 10],
+        filename: `DouaneCalc_Maroc_${invoice?.invoiceNumber || 'Rapport'}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, letterRendering: true, backgroundColor: '#ffffff' },
+        html2canvas: { 
+          scale: 2, 
+          useCORS: true, 
+          letterRendering: true, 
+          backgroundColor: '#ffffff' 
+        },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
       await html2pdfLib().set(opt).from(element).save();
@@ -205,7 +243,21 @@ const App: React.FC = () => {
             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Calcul VAD • Régimes 023/312</p>
           </div>
         </div>
-        <ThemeToggle />
+        
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={handleConnectKey}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+              hasKey 
+                ? 'bg-morocco-green/10 text-morocco-green border border-morocco-green/20' 
+                : 'bg-morocco-red text-white shadow-lg animate-pulse'
+            }`}
+          >
+            <div className={`w-2 h-2 rounded-full ${hasKey ? 'bg-morocco-green' : 'bg-white'}`}></div>
+            {hasKey ? 'Gemini Connecté' : 'Connecter API Gemini'}
+          </button>
+          <ThemeToggle />
+        </div>
       </header>
 
       <main className="max-w-7xl mx-auto grid lg:grid-cols-12 gap-8 print:block">
@@ -213,15 +265,30 @@ const App: React.FC = () => {
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
             <h2 className="text-xs font-black uppercase tracking-widest mb-4 text-slate-400">Importer Facture</h2>
             <div className="relative border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl p-10 hover:border-morocco-red transition-all group cursor-pointer text-center bg-slate-50 dark:bg-slate-800/20">
-              <input type="file" accept="image/*,application/pdf" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
+              <input 
+                type="file" 
+                accept="image/*,application/pdf" 
+                onChange={handleFileUpload} 
+                className="absolute inset-0 opacity-0 cursor-pointer z-10" 
+              />
               <div className="space-y-3">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-slate-300 group-hover:text-morocco-red mx-auto transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
                 <p className="text-xs font-black text-slate-500 uppercase">Scanner PDF / Image</p>
+                <p className="text-[9px] text-slate-400 font-bold uppercase">Analyse 023 / 312 Automatique</p>
               </div>
             </div>
           </div>
+
+          {!hasKey && (
+            <div className="p-4 bg-red-50 dark:bg-red-900/10 rounded-2xl border border-red-100 dark:border-red-900/20">
+              <p className="text-[10px] font-black uppercase text-red-600 dark:text-red-400 mb-2">Clé API Requise</p>
+              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                Pour utiliser ce service gratuitement, connectez votre propre clé API Google AI Studio via le bouton en haut à droite.
+              </p>
+            </div>
+          )}
 
           {invoice && (
             <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
@@ -239,7 +306,7 @@ const App: React.FC = () => {
           {loading && (
             <div className="bg-white dark:bg-slate-900 rounded-3xl p-10 shadow-sm text-center border border-morocco-red/10">
               <div className="w-8 h-8 border-4 border-morocco-red border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-              <p className="text-[10px] font-black uppercase text-morocco-red">Analyse Intelligente...</p>
+              <p className="text-[10px] font-black uppercase text-morocco-red">Analyse Intelligente ADII...</p>
             </div>
           )}
 
@@ -262,7 +329,7 @@ const App: React.FC = () => {
                </div>
                <h3 className="text-lg font-black uppercase text-slate-900 dark:text-white mb-2">Prêt pour l'import</h3>
                <p className="text-slate-500 text-sm max-w-sm">
-                 Déposez votre facture. L'IA calculera automatiquement la VAD marocaine en séparant les articles et les emballages.
+                 Déposez votre facture. L'IA calculera automatiquement la VAD marocaine en séparant les articles (023) et les emballages (312).
                </p>
             </div>
           )}
@@ -275,7 +342,10 @@ const App: React.FC = () => {
                   disabled={isGenerating}
                   className="flex items-center gap-3 px-6 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:scale-105 transition-all shadow-xl disabled:opacity-50"
                 >
-                  {isGenerating ? "Génération..." : "Imprimer Rapport A4"}
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                  </svg>
+                  {isGenerating ? "Génération PDF..." : "Exporter Rapport A4"}
                 </button>
               </div>
               <CustomsReport invoice={invoice} results={results} />
