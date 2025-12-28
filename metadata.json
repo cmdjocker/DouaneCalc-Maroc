@@ -1,0 +1,7 @@
+{
+  "name": "DouaneCalc Maroc",
+  "description": "A professional platform to calculate Moroccan customs duties by extracting data from invoices using AI, supporting multi-currency conversion and PDF reporting.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

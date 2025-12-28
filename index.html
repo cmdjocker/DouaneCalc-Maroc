@@ -1,0 +1,141 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DouaneCalc Maroc - AI Invoice Processor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              morocco: {
+                red: '#c1272d',
+                green: '#006233',
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+      body {
+        font-family: 'Inter', sans-serif;
+      }
+      .custom-scrollbar::-webkit-scrollbar {
+        width: 6px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: #888;
+        border-radius: 10px;
+      }
+
+      /* Extreme PDF Compaction for Single Page Fit */
+      .generating-pdf #pdf-content {
+        background-color: white !important;
+        color: black !important;
+        width: 200mm !important;
+        padding: 5mm !important;
+        margin: 0 !important;
+        font-size: 0.65rem !important; /* Very small but readable for A4 */
+      }
+      .generating-pdf #pdf-content * {
+        color: black !important;
+        border-color: #e2e8f0 !important;
+        background-color: white !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+      }
+      
+      /* Target specific elements to shrink */
+      .generating-pdf #pdf-content h2 { font-size: 1.2rem !important; margin-bottom: 2px !important; }
+      .generating-pdf #pdf-content h4 { font-size: 0.9rem !important; margin-bottom: 2px !important; }
+      .generating-pdf #pdf-content .p-10, 
+      .generating-pdf #pdf-content .p-12, 
+      .generating-pdf #pdf-content .p-8,
+      .generating-pdf #pdf-content .p-6,
+      .generating-pdf #pdf-content .p-5 { padding: 4px !important; }
+      
+      /* Space saving */
+      .generating-pdf #pdf-content .mb-12,
+      .generating-pdf #pdf-content .mb-10,
+      .generating-pdf #pdf-content .mb-8,
+      .generating-pdf #pdf-content .mb-6 { margin-bottom: 4px !important; }
+      .generating-pdf #pdf-content .mt-6,
+      .generating-pdf #pdf-content .mt-12 { margin-top: 4px !important; }
+      .generating-pdf #pdf-content .gap-8,
+      .generating-pdf #pdf-content .gap-10,
+      .generating-pdf #pdf-content .gap-12 { gap: 4px !important; }
+      .generating-pdf #pdf-content .space-y-8,
+      .generating-pdf #pdf-content .space-y-10 { gap: 4px !important; }
+
+      /* Shrink the massive total VAD block */
+      .generating-pdf #pdf-content .text-4xl,
+      .generating-pdf #pdf-content .text-5xl,
+      .generating-pdf #pdf-content .text-7xl { font-size: 1.8rem !important; }
+      .generating-pdf #pdf-content .text-2xl,
+      .generating-pdf #pdf-content .text-3xl { font-size: 1rem !important; }
+
+      .generating-pdf #pdf-content .bg-slate-900,
+      .generating-pdf #pdf-content .dark .bg-slate-900 {
+        background-color: #0f172a !important;
+      }
+      .generating-pdf #pdf-content .bg-slate-900 *,
+      .generating-pdf #pdf-content .dark .bg-slate-900 * {
+        color: white !important;
+      }
+      .generating-pdf #pdf-content .text-morocco-red { color: #c1272d !important; }
+      .generating-pdf #pdf-content .text-morocco-green { color: #006233 !important; }
+      
+      .generating-pdf .no-print { display: none !important; }
+
+      @media print {
+        @page {
+          size: A4;
+          margin: 0;
+        }
+        html, body {
+          background: white !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        .no-print { display: none !important; }
+        #root { padding: 0 !important; margin: 0 !important; }
+        #pdf-content {
+          width: 210mm !important;
+          padding: 10mm !important;
+          margin: 0 auto !important;
+          background: white !important;
+          box-shadow: none !important;
+          border: none !important;
+        }
+      }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
+    "recharts": "https://esm.sh/recharts@^3.6.0",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3"
+  }
+}
+</script>
+</head>
+<body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300">
+    <div id="root"></div>
+</body>
+</html>
