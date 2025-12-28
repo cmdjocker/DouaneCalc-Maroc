@@ -5,9 +5,9 @@ import { InvoiceData } from "../types";
 export const extractInvoiceData = async (base64Image: string, mimeType: string): Promise<InvoiceData> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  // Using gemini-3-pro-preview for complex invoice analysis and following correct contents structure
+  // Using gemini-3-flash-preview for faster and reliable structured extraction
   const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
+    model: 'gemini-3-flash-preview',
     contents: {
       parts: [
         {
@@ -29,7 +29,7 @@ export const extractInvoiceData = async (base64Image: string, mimeType: string):
           5. Extract fret (freight), assurance (insurance), and the INCOTERM (FOB, CFR, CIF, EXW, etc.).
           6. Assign 10-digit HS Codes.
           
-          JSON structure must follow the schema strictly.`
+          JSON structure must follow the schema strictly. Return ONLY the JSON object.`
         }
       ]
     },
@@ -71,20 +71,21 @@ export const extractInvoiceData = async (base64Image: string, mimeType: string):
     }
   });
 
-  // Extract text directly from response.text property
+  if (!response.text) {
+    throw new Error("The AI returned an empty response. Please try with a clearer image.");
+  }
+
   return JSON.parse(response.text) as InvoiceData;
 };
 
 export const getExchangeRate = async (from: string, to: string = 'MAD'): Promise<number> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  // Using gemini-3-flash-preview for basic text tasks
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
     contents: `What is the current official exchange rate from ${from} to ${to}? Return only the number as a float. Today is ${new Date().toDateString()}.`,
     config: { temperature: 1 }
   });
   
-  // Extract text directly from response.text property
   const rate = parseFloat(response.text.trim());
   return isNaN(rate) ? 10.5 : rate;
 };

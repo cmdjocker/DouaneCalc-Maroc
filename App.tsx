@@ -131,7 +131,6 @@ const App: React.FC = () => {
       totalFobMAD,
       totalFretMAD: totalFretMAD,
       totalAssuranceMAD: breakdown.reduce((s, r) => s + r.assuranceValueMAD, 0),
-      // Fix: Use aconageValueMAD instead of totalAconageMAD to match RegimeResult interface
       totalAconageMAD: breakdown.reduce((s, r) => s + r.aconageValueMAD, 0),
       totalWeightBrut: totalWeightBrut,
       totalVAD: breakdown.reduce((s, r) => s + r.totalVAD, 0),
@@ -158,8 +157,9 @@ const App: React.FC = () => {
         setInvoice(data);
         calculateCustoms(data, rate);
       } catch (err: any) {
-        console.error(err);
-        setError("L'analyse a échoué. Vérifiez les informations de poids et l'incoterm sur la facture.");
+        console.error("Analysis error:", err);
+        // Show the specific error message to help the user debug
+        setError(`Erreur: ${err.message || "L'analyse a échoué. Vérifiez votre clé API et la qualité du document."}`);
       } finally {
         setLoading(false);
       }
@@ -191,7 +191,6 @@ const App: React.FC = () => {
         throw new Error("PDF library not loaded");
       }
 
-      // Explicitly forcing one page by avoiding all breaks and setting single page orientation
       const opt = {
         margin: [5, 5, 5, 5],
         filename: `Rapport_VAD_Unique_${invoice?.invoiceNumber || 'Doc'}.pdf`,
@@ -204,7 +203,7 @@ const App: React.FC = () => {
           scrollY: 0
         },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: 'avoid-all' } // Critical for keeping it on one page
+        pagebreak: { mode: 'avoid-all' }
       };
       
       await html2pdfLib().set(opt).from(element).save();
@@ -281,7 +280,7 @@ const App: React.FC = () => {
           )}
 
           {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/50 rounded-2xl p-6 text-red-600 dark:text-red-400 text-xs font-bold leading-relaxed">
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/50 rounded-2xl p-6 text-red-600 dark:text-red-400 text-xs font-bold leading-relaxed break-words">
               {error}
             </div>
           )}
