@@ -1,6 +1,6 @@
 {
-  "name": "DouaneCalc Maroc",
-  "description": "A professional platform to calculate Moroccan customs duties by extracting data from invoices using AI, supporting multi-currency conversion and PDF reporting.",
+  "name": "DouaneCalc Maroc Pro",
+  "description": "Plateforme professionnelle pour le calcul de la valeur en douane marocaine (VAD) via IA.",
   "requestFramePermissions": [
     "camera"
   ]
