@@ -3,9 +3,9 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { InvoiceData } from "../types";
 
 export const extractInvoiceData = async (base64Image: string, mimeType: string): Promise<InvoiceData> => {
+  // Initialize AI client inside the function to ensure the correct API key is used
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  // Using gemini-3-flash-preview for faster and reliable structured extraction
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
     contents: {
@@ -71,11 +71,13 @@ export const extractInvoiceData = async (base64Image: string, mimeType: string):
     }
   });
 
-  if (!response.text) {
+  // Extract text safely from response.text property
+  const text = response.text;
+  if (!text) {
     throw new Error("The AI returned an empty response. Please try with a clearer image.");
   }
 
-  return JSON.parse(response.text) as InvoiceData;
+  return JSON.parse(text) as InvoiceData;
 };
 
 export const getExchangeRate = async (from: string, to: string = 'MAD'): Promise<number> => {
@@ -86,6 +88,8 @@ export const getExchangeRate = async (from: string, to: string = 'MAD'): Promise
     config: { temperature: 1 }
   });
   
-  const rate = parseFloat(response.text.trim());
+  // Safe extraction using response.text property
+  const rateStr = response.text?.trim() || "10.5";
+  const rate = parseFloat(rateStr);
   return isNaN(rate) ? 10.5 : rate;
 };

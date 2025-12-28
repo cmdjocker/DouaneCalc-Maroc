@@ -24,6 +24,34 @@ const App: React.FC = () => {
   const [invoice, setInvoice] = useState<InvoiceData | null>(null);
   const [results, setResults] = useState<CustomsResult | null>(null);
   const [exchangeRate, setExchangeRate] = useState<number>(10.5);
+  const [hasKey, setHasKey] = useState<boolean>(true);
+
+  // Check for API key status on mount
+  useEffect(() => {
+    const checkKey = async () => {
+      if (typeof window !== 'undefined' && (window as any).aistudio) {
+        const selected = await (window as any).aistudio.hasSelectedApiKey();
+        setHasKey(selected || !!process.env.API_KEY);
+      } else {
+        setHasKey(!!process.env.API_KEY);
+      }
+    };
+    checkKey();
+  }, []);
+
+  const handleConnectKey = async () => {
+    if ((window as any).aistudio) {
+      try {
+        await (window as any).aistudio.openSelectKey();
+        setHasKey(true);
+        setError(null);
+      } catch (err) {
+        console.error("Failed to open key selection:", err);
+      }
+    } else {
+      alert("L'interface de sélection de clé n'est pas disponible dans cet environnement. Assurez-vous d'avoir configuré l'API_KEY dans vos variables d'environnement.");
+    }
+  };
 
   const calculateCustoms = useCallback((data: InvoiceData, rate: number) => {
     const totalFobMAD = data.subtotal * rate;
@@ -131,6 +159,7 @@ const App: React.FC = () => {
       totalFobMAD,
       totalFretMAD: totalFretMAD,
       totalAssuranceMAD: breakdown.reduce((s, r) => s + r.assuranceValueMAD, 0),
+      // Fixed: Property name error - using aconageValueMAD from RegimeResult
       totalAconageMAD: breakdown.reduce((s, r) => s + r.aconageValueMAD, 0),
       totalWeightBrut: totalWeightBrut,
       totalVAD: breakdown.reduce((s, r) => s + r.totalVAD, 0),
@@ -139,6 +168,12 @@ const App: React.FC = () => {
   }, []);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!hasKey) {
+      setError("Veuillez d'abord connecter votre clé API Gemini.");
+      handleConnectKey();
+      return;
+    }
+
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -158,8 +193,12 @@ const App: React.FC = () => {
         calculateCustoms(data, rate);
       } catch (err: any) {
         console.error("Analysis error:", err);
-        // Show the specific error message to help the user debug
-        setError(`Erreur: ${err.message || "L'analyse a échoué. Vérifiez votre clé API et la qualité du document."}`);
+        if (err.message?.includes("API Key") || err.message?.includes("not found")) {
+          setHasKey(false);
+          setError("Erreur de clé API. Veuillez reconnecter votre clé.");
+        } else {
+          setError(`Erreur: ${err.message || "L'analyse a échoué. Vérifiez la qualité du document."}`);
+        }
       } finally {
         setLoading(false);
       }
@@ -187,9 +226,7 @@ const App: React.FC = () => {
     try {
       // @ts-ignore
       const html2pdfLib = window.html2pdf;
-      if (!html2pdfLib) {
-        throw new Error("PDF library not loaded");
-      }
+      if (!html2pdfLib) throw new Error("PDF library not loaded");
 
       const opt = {
         margin: [5, 5, 5, 5],
@@ -226,28 +263,57 @@ const App: React.FC = () => {
             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Expert VAD • Poids Brut & Aconage</p>
           </div>
         </div>
-        <ThemeToggle />
+        
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={handleConnectKey}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+              hasKey 
+                ? 'bg-morocco-green/10 text-morocco-green border border-morocco-green/20' 
+                : 'bg-morocco-red text-white shadow-lg animate-pulse'
+            }`}
+          >
+            <div className={`w-2 h-2 rounded-full ${hasKey ? 'bg-morocco-green' : 'bg-white'}`}></div>
+            {hasKey ? 'Gemini Connecté' : 'Connecter Gemini'}
+          </button>
+          <ThemeToggle />
+        </div>
       </header>
 
       <main className="max-w-7xl mx-auto grid lg:grid-cols-12 gap-8 print:block print:w-full">
         <div className="lg:col-span-4 space-y-6 no-print">
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
             <h2 className="text-xs font-black uppercase tracking-widest mb-4 text-slate-400">Importer Facture</h2>
-            <div className="relative border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl p-10 hover:border-morocco-red transition-all group cursor-pointer text-center bg-slate-50 dark:bg-slate-800/20">
-              <input type="file" accept="image/*,application/pdf" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
+            <div className={`relative border-2 border-dashed rounded-2xl p-10 transition-all group cursor-pointer text-center bg-slate-50 dark:bg-slate-800/20 ${!hasKey ? 'border-red-200 grayscale cursor-not-allowed' : 'border-slate-200 dark:border-slate-800 hover:border-morocco-red'}`}>
+              <input 
+                type="file" 
+                accept="image/*,application/pdf" 
+                onChange={handleFileUpload} 
+                className="absolute inset-0 opacity-0 cursor-pointer z-10 disabled:cursor-not-allowed" 
+                disabled={!hasKey}
+              />
               <div className="space-y-4">
-                <div className="w-14 h-14 bg-white dark:bg-slate-800 rounded-2xl shadow-sm flex items-center justify-center mx-auto transition-transform group-hover:scale-110">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 text-morocco-red" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div className={`w-14 h-14 bg-white dark:bg-slate-800 rounded-2xl shadow-sm flex items-center justify-center mx-auto transition-transform ${hasKey ? 'group-hover:scale-110' : ''}`}>
+                  <svg xmlns="http://www.w3.org/2000/svg" className={`h-7 w-7 ${hasKey ? 'text-morocco-red' : 'text-slate-300'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                 </div>
                 <div>
-                  <p className="text-sm font-black text-slate-700 dark:text-slate-300">Scanner le document</p>
+                  <p className="text-sm font-black text-slate-700 dark:text-slate-300">
+                    {hasKey ? "Scanner le document" : "Connecter Gemini d'abord"}
+                  </p>
                   <p className="text-[10px] text-slate-400 mt-1 uppercase font-bold tracking-tight">Traitement HS Code & Poids</p>
                 </div>
               </div>
             </div>
           </div>
+
+          {!hasKey && (
+            <div className="p-6 bg-red-50 dark:bg-red-900/10 rounded-2xl border border-red-100 dark:border-red-900/20">
+              <p className="text-xs font-bold text-red-600 dark:text-red-400 mb-4">Une clé API Google Gemini est requise pour analyser vos factures.</p>
+              <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="text-[10px] uppercase font-black text-slate-400 hover:text-morocco-red underline">Documentation Facturation</a>
+            </div>
+          )}
 
           {invoice && (
             <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
@@ -273,14 +339,14 @@ const App: React.FC = () => {
           {(loading || isGenerating) && (
             <div className="bg-white dark:bg-slate-900 rounded-3xl p-10 shadow-sm text-center space-y-4 border border-morocco-red/20">
               <div className="w-10 h-10 border-4 border-morocco-red border-t-transparent rounded-full animate-spin mx-auto"></div>
-              <p className="text-xs font-black uppercase tracking-widest text-morocco-red tracking-widest">
-                {loading ? "Analyse IA en cours..." : "Formatage Page Unique..."}
+              <p className="text-xs font-black uppercase tracking-widest text-morocco-red">
+                {loading ? "Analyse IA en cours..." : "Formatage Rapport..."}
               </p>
             </div>
           )}
 
           {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/50 rounded-2xl p-6 text-red-600 dark:text-red-400 text-xs font-bold leading-relaxed break-words">
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/50 rounded-2xl p-6 text-red-600 dark:text-red-400 text-xs font-bold leading-relaxed">
               {error}
             </div>
           )}
@@ -293,7 +359,7 @@ const App: React.FC = () => {
             <div className="h-full min-h-[400px] flex flex-col items-center justify-center text-center p-12 bg-white/40 dark:bg-slate-900/40 rounded-[2.5rem] border border-dashed border-slate-300 dark:border-slate-800">
                <h3 className="text-xl font-black mb-2 uppercase tracking-tight text-slate-900 dark:text-white">Rapport Douanier</h3>
                <p className="text-slate-500 text-sm max-w-md leading-relaxed mb-6">
-                 Séparez automatiquement vos articles par code S.H. pour les régimes 023 et 312 avec calcul spécifique du Fret, de l'Assurance et de l'Aconage.
+                 Déposez une facture pour calculer automatiquement la VAD (Valeur à Déclarer) avec séparation des régimes et calcul des frais annexes.
                </p>
                <div className="grid grid-cols-2 gap-4 w-full max-w-lg text-left">
                   <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
@@ -320,7 +386,7 @@ const App: React.FC = () => {
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                   </svg>
-                  {isGenerating ? "Traitement..." : "Télécharger Rapport Page Unique"}
+                  {isGenerating ? "Traitement..." : "Télécharger Rapport PDF"}
                 </button>
               </div>
               <CustomsReport invoice={invoice} results={results} />
