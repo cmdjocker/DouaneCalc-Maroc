@@ -23,101 +23,35 @@
       }
     </script>
     <style>
-      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap');
       body {
         font-family: 'Inter', sans-serif;
       }
-      .custom-scrollbar::-webkit-scrollbar {
-        width: 6px;
-      }
-      .custom-scrollbar::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      .custom-scrollbar::-webkit-scrollbar-thumb {
-        background: #888;
-        border-radius: 10px;
-      }
+      .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+      .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
 
-      /* Extreme PDF Compaction for Single Page Fit */
+      /* PDF Generation Overrides */
       .generating-pdf #pdf-content {
-        background-color: white !important;
+        width: 210mm !important;
+        background: white !important;
+        padding: 10mm !important;
         color: black !important;
-        width: 200mm !important;
-        padding: 5mm !important;
-        margin: 0 !important;
-        font-size: 0.65rem !important;
       }
       .generating-pdf #pdf-content * {
+        border-color: #f1f5f9 !important;
         color: black !important;
-        border-color: #e2e8f0 !important;
-        background-color: white !important;
-        margin-top: 0 !important;
-        margin-bottom: 0 !important;
-        padding-top: 0 !important;
-        padding-bottom: 0 !important;
+        box-shadow: none !important;
       }
-      
-      .generating-pdf #pdf-content h2 { font-size: 1.2rem !important; margin-bottom: 2px !important; }
-      .generating-pdf #pdf-content h4 { font-size: 0.9rem !important; margin-bottom: 2px !important; }
-      .generating-pdf #pdf-content .p-10, 
-      .generating-pdf #pdf-content .p-12, 
-      .generating-pdf #pdf-content .p-8,
-      .generating-pdf #pdf-content .p-6,
-      .generating-pdf #pdf-content .p-5 { padding: 4px !important; }
-      
-      .generating-pdf #pdf-content .mb-12,
-      .generating-pdf #pdf-content .mb-10,
-      .generating-pdf #pdf-content .mb-8,
-      .generating-pdf #pdf-content .mb-6 { margin-bottom: 4px !important; }
-      .generating-pdf #pdf-content .mt-6,
-      .generating-pdf #pdf-content .mt-12 { margin-top: 4px !important; }
-      .generating-pdf #pdf-content .gap-8,
-      .generating-pdf #pdf-content .gap-10,
-      .generating-pdf #pdf-content .gap-12 { gap: 4px !important; }
-      .generating-pdf #pdf-content .space-y-8,
-      .generating-pdf #pdf-content .space-y-10 { gap: 4px !important; }
-
-      .generating-pdf #pdf-content .text-4xl,
-      .generating-pdf #pdf-content .text-5xl,
-      .generating-pdf #pdf-content .text-7xl { font-size: 1.8rem !important; }
-      .generating-pdf #pdf-content .text-2xl,
-      .generating-pdf #pdf-content .text-3xl { font-size: 1rem !important; }
-
-      .generating-pdf #pdf-content .bg-slate-900,
-      .generating-pdf #pdf-content .dark .bg-slate-900 {
-        background-color: #0f172a !important;
-      }
-      .generating-pdf #pdf-content .bg-slate-900 *,
-      .generating-pdf #pdf-content .dark .bg-slate-900 * {
-        color: white !important;
-      }
+      .generating-pdf #pdf-content .bg-slate-900 { background: #0f172a !important; }
+      .generating-pdf #pdf-content .bg-slate-900 * { color: white !important; }
       .generating-pdf #pdf-content .text-morocco-red { color: #c1272d !important; }
       .generating-pdf #pdf-content .text-morocco-green { color: #006233 !important; }
-      
-      .generating-pdf .no-print { display: none !important; }
 
       @media print {
-        @page {
-          size: A4;
-          margin: 0;
-        }
-        html, body {
-          background: white !important;
-          margin: 0 !important;
-          padding: 0 !important;
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-        }
+        @page { size: A4; margin: 0; }
         .no-print { display: none !important; }
-        #root { padding: 0 !important; margin: 0 !important; }
-        #pdf-content {
-          width: 210mm !important;
-          padding: 10mm !important;
-          margin: 0 auto !important;
-          background: white !important;
-          box-shadow: none !important;
-          border: none !important;
-        }
+        #root { padding: 0 !important; }
+        #pdf-content { width: 100% !important; padding: 10mm !important; }
       }
     </style>
 <script type="importmap">
@@ -134,7 +68,6 @@
 </head>
 <body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300">
     <div id="root"></div>
-    <!-- Boot the application -->
     <script type="module" src="/index.tsx"></script>
 </body>
 </html>

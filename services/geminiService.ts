@@ -2,8 +2,28 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { InvoiceData } from "../types";
 
+/**
+ * Fetches exchange rates using the Frankfurter API (Free, no key required).
+ */
+export const getExchangeRate = async (from: string, to: string = 'MAD'): Promise<number> => {
+  try {
+    // Frankfurter is a free service for current and historical exchange rates
+    const response = await fetch(`https://api.frankfurter.app/latest?from=${from}&to=${to}`);
+    if (!response.ok) throw new Error('Exchange rate service unavailable');
+    const data = await response.json();
+    return data.rates[to] || 10.5;
+  } catch (error) {
+    console.warn("Falling back to estimated rate due to network error:", error);
+    return 10.5; // Standard fallback for EUR/MAD
+  }
+};
+
+/**
+ * Uses Gemini 3 Flash to analyze the invoice image/PDF.
+ * Flash is used because it's fast and has a generous free tier.
+ */
 export const extractInvoiceData = async (base64Image: string, mimeType: string): Promise<InvoiceData> => {
-  // Initialize AI client inside the function to ensure the correct API key is used
+  // The API key is injected by the platform environment
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const response = await ai.models.generateContent({
@@ -17,19 +37,21 @@ export const extractInvoiceData = async (base64Image: string, mimeType: string):
           }
         },
         {
-          text: `Analyze this invoice for Moroccan Customs (ADII). 
+          text: `You are an expert Moroccan Customs (ADII) consultant. 
+          Extract data from this invoice for a "Valeur à Déclarer" (VAD) calculation.
           
-          EXTRACTION RULES:
-          1. Categorize every item into a Regime Code. 
-             - Products/Goods should usually be '023' (ATPA).
-             - Packaging/Pallets should be '312'.
-          2. For '023' items: extract the Net Weight (Poids Net).
-          3. For '312' items: detect the number of 'caisses' (boxes) and 'palettes' (pallets).
-          4. Extract the TOTAL GROSS WEIGHT (Poids Brut Total) of the whole invoice.
-          5. Extract fret (freight), assurance (insurance), and the INCOTERM (FOB, CFR, CIF, EXW, etc.).
-          6. Assign 10-digit HS Codes.
+          RULES:
+          1. REGIMES: 
+             - Commercial goods/products = '023'.
+             - Pallets, crates, or packaging mentioned as line items = '312'.
+          2. WEIGHTS: 
+             - Extract 'Poids Net' for each item if available.
+             - Extract 'Poids Brut Total' for the whole shipment.
+          3. INCOTERM: Detect FOB, CFR, CIF, EXW, etc. (Default to FOB if unclear).
+          4. HS CODES: Assign 10-digit Moroccan HS Codes (SH) based on descriptions.
+          5. PACKAGING: For regime '312' items, count 'caisses' (boxes) and 'palettes'.
           
-          JSON structure must follow the schema strictly. Return ONLY the JSON object.`
+          Return JSON format only.`
         }
       ]
     },
@@ -44,8 +66,8 @@ export const extractInvoiceData = async (base64Image: string, mimeType: string):
           subtotal: { type: Type.NUMBER },
           fret: { type: Type.NUMBER },
           assurance: { type: Type.NUMBER },
-          incoterm: { type: Type.STRING, description: "The incoterm mentioned on the invoice (e.g., CFR, FOB)" },
-          totalWeightBrut: { type: Type.NUMBER, description: "Total gross weight (Brut Total) from the invoice" },
+          incoterm: { type: Type.STRING },
+          totalWeightBrut: { type: Type.NUMBER },
           transportMethod: { type: Type.STRING },
           items: {
             type: Type.ARRAY,
@@ -58,9 +80,9 @@ export const extractInvoiceData = async (base64Image: string, mimeType: string):
                 totalPrice: { type: Type.NUMBER },
                 regime: { type: Type.STRING },
                 hsCode: { type: Type.STRING },
-                weightNet: { type: Type.NUMBER, description: "Net weight for 023 items" },
-                packagingCaisses: { type: Type.NUMBER, description: "Count of boxes for 312 items" },
-                packagingPalettes: { type: Type.NUMBER, description: "Count of pallets for 312 items" }
+                weightNet: { type: Type.NUMBER },
+                packagingCaisses: { type: Type.NUMBER },
+                packagingPalettes: { type: Type.NUMBER }
               },
               required: ["description", "quantity", "unitPrice", "totalPrice", "regime", "hsCode"]
             }
@@ -71,25 +93,14 @@ export const extractInvoiceData = async (base64Image: string, mimeType: string):
     }
   });
 
-  // Extract text safely from response.text property
   const text = response.text;
   if (!text) {
-    throw new Error("The AI returned an empty response. Please try with a clearer image.");
+    throw new Error("L'IA n'a pas pu lire le document. Assurez-vous que l'image est nette et bien éclairée.");
   }
 
-  return JSON.parse(text) as InvoiceData;
-};
-
-export const getExchangeRate = async (from: string, to: string = 'MAD'): Promise<number> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    contents: `What is the current official exchange rate from ${from} to ${to}? Return only the number as a float. Today is ${new Date().toDateString()}.`,
-    config: { temperature: 1 }
-  });
-  
-  // Safe extraction using response.text property
-  const rateStr = response.text?.trim() || "10.5";
-  const rate = parseFloat(rateStr);
-  return isNaN(rate) ? 10.5 : rate;
+  try {
+    return JSON.parse(text) as InvoiceData;
+  } catch (e) {
+    throw new Error("Erreur de formatage des données. Veuillez réessayer avec une autre capture.");
+  }
 };
