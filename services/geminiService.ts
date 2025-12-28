@@ -6,11 +6,12 @@ import { InvoiceData } from "../types";
  * Fetches exchange rates using the Frankfurter API (Free, no key required).
  */
 export const getExchangeRate = async (from: string, to: string = 'MAD'): Promise<number> => {
+  if (from === 'MAD') return 1;
   try {
-    const response = await fetch(`https://api.frankfurter.app/latest?from=${from}&to=${to}`);
+    const response = await fetch(`https://api.frankfurter.app/latest?from=${from}&to=MAD`);
     if (!response.ok) throw new Error('Exchange rate service unavailable');
     const data = await response.json();
-    return data.rates[to] || 10.5;
+    return data.rates['MAD'] || 10.5;
   } catch (error) {
     console.warn("Falling back to estimated rate due to network error:", error);
     return 10.5; 
@@ -21,10 +22,9 @@ export const getExchangeRate = async (from: string, to: string = 'MAD'): Promise
  * Uses Gemini 3 Flash to analyze the invoice image/PDF.
  */
 export const extractInvoiceData = async (base64Image: string, mimeType: string): Promise<InvoiceData> => {
-  // CRITICAL: Ensure fresh instance with current key
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
-    throw new Error("Clé API absente. Veuillez cliquer sur 'Connecter API'.");
+    throw new Error("Clé API non configurée dans l'environnement.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
@@ -98,12 +98,12 @@ export const extractInvoiceData = async (base64Image: string, mimeType: string):
 
   const text = response.text;
   if (!text) {
-    throw new Error("L'IA n'a pas pu lire le document. Vérifiez la connexion API.");
+    throw new Error("L'IA n'a pas pu traiter le document.");
   }
 
   try {
     return JSON.parse(text) as InvoiceData;
   } catch (e) {
-    throw new Error("Erreur de formatage des données. Veuillez réessayer.");
+    throw new Error("Erreur de parsing des données IA.");
   }
 };

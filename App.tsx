@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { ThemeToggle } from './components/ThemeToggle';
 import { extractInvoiceData, getExchangeRate } from './services/geminiService';
-import { InvoiceData, CustomsResult, RegimeResult, HSCodeBreakdown } from './types';
+import { InvoiceData, CustomsResult, RegimeResult, HSCodeBreakdown, TransportMethod } from './types';
 import { InvoiceSummary } from './components/InvoiceSummary';
 import { CustomsReport } from './components/CustomsReport';
 
@@ -20,41 +20,11 @@ const ACONAGE_FIXED_MAD = 2300;
 const App: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isManualMode, setIsManualMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [invoice, setInvoice] = useState<InvoiceData | null>(null);
   const [results, setResults] = useState<CustomsResult | null>(null);
   const [exchangeRate, setExchangeRate] = useState<number>(10.5);
-  const [hasKey, setHasKey] = useState<boolean>(false);
-
-  // Check for existing API key selection or environment key
-  useEffect(() => {
-    const checkKey = async () => {
-      const platformKey = !!process.env.API_KEY;
-      if ((window as any).aistudio) {
-        const selected = await (window as any).aistudio.hasSelectedApiKey();
-        setHasKey(selected || platformKey);
-      } else {
-        setHasKey(platformKey);
-      }
-    };
-    checkKey();
-  }, []);
-
-  const handleConnectKey = async () => {
-    if ((window as any).aistudio) {
-      try {
-        await (window as any).aistudio.openSelectKey();
-        // GUIDELINE: Assume success after triggering and proceed
-        setHasKey(true);
-        setError(null);
-        return true;
-      } catch (err) {
-        console.error("Failed to open key selection:", err);
-        return false;
-      }
-    }
-    return false;
-  };
 
   const calculateCustoms = useCallback((data: InvoiceData, rate: number) => {
     const totalFobMAD = data.subtotal * rate;
@@ -65,16 +35,17 @@ const App: React.FC = () => {
     const globalFretRatio = totalFretMAD / totalWeightBrut;
     const globalAconageRatio = ACONAGE_FIXED_MAD / totalWeightBrut;
     
-    const weight023Total = data.items
+    const items = data.items || [];
+    const weight023Total = items
       .filter(i => i.regime === '023')
       .reduce((s, i) => s + (i.weightNet || 0), 0) || 1;
     
     const fretRatioFor023_CFR = totalFretMAD / weight023Total;
 
-    const regimesFound = Array.from(new Set(data.items.map(i => i.regime)));
+    const regimesFound = Array.from(new Set(items.map(i => i.regime)));
 
     const breakdown: RegimeResult[] = regimesFound.map((regime): RegimeResult => {
-      const regimeItems = data.items.filter(item => item.regime === regime);
+      const regimeItems = items.filter(item => item.regime === regime);
       const hsGroups: Record<string, typeof regimeItems> = {};
       
       regimeItems.forEach(item => {
@@ -135,13 +106,11 @@ const App: React.FC = () => {
       const aconageRegime = hsCodeBreakdown.reduce((s, h) => s + h.aconageValueMAD, 0);
       const assuranceRegime = hsCodeBreakdown.reduce((s, h) => s + h.assuranceValueMAD, 0);
       
-      let fretRegimeForVAD = hsCodeBreakdown.reduce((s, h) => s + h.fretValueMAD, 0);
-
       return {
         regime,
         regimeLibelle: REGIME_LABELS[regime] || 'Régime Spécifique',
         fobValueMAD: fobRegime,
-        fretValueMAD: fretRegimeForVAD, 
+        fretValueMAD: hsCodeBreakdown.reduce((s, h) => s + h.fretValueMAD, 0), 
         assuranceValueMAD: assuranceRegime,
         aconageValueMAD: aconageRegime,
         weightBrut: weightRegime,
@@ -167,15 +136,11 @@ const App: React.FC = () => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (!hasKey) {
-      const connected = await handleConnectKey();
-      if (!connected) return;
-    }
-
     setLoading(true);
     setError(null);
     setInvoice(null);
     setResults(null);
+    setIsManualMode(false);
 
     const reader = new FileReader();
     reader.onload = async () => {
@@ -188,16 +153,8 @@ const App: React.FC = () => {
         calculateCustoms(data, rate);
       } catch (err: any) {
         console.error("Analysis error:", err);
-        const msg = err.message || "";
-        
-        // GUIDELINE: Reset if entity not found
-        if (msg.includes("Requested entity was not found") || msg.includes("API Key")) {
-          setHasKey(false);
-          setError("Session API expirée ou clé invalide. Veuillez reconnecter.");
-          await handleConnectKey();
-        } else {
-          setError(msg || "L'analyse a échoué. Vérifiez la qualité de l'image.");
-        }
+        setError("L'IA n'est pas disponible actuellement ou la clé API est absente. Vous pouvez utiliser le mode manuel.");
+        setIsManualMode(true);
       } finally {
         setLoading(false);
       }
@@ -205,12 +162,43 @@ const App: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
-  const handleRateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value);
-    if (!isNaN(val)) {
-      setExchangeRate(val);
-      if (invoice) calculateCustoms(invoice, val);
-    }
+  const handleManualSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const subtotal = parseFloat(formData.get('subtotal') as string) || 0;
+    const fret = parseFloat(formData.get('fret') as string) || 0;
+    const currency = (formData.get('currency') as string) || 'EUR';
+    const incoterm = (formData.get('incoterm') as string) || 'FOB';
+    const weight = parseFloat(formData.get('weight') as string) || 0;
+
+    const manualData: InvoiceData = {
+      invoiceNumber: "MANUAL-" + Date.now().toString().slice(-4),
+      date: new Date().toISOString().split('T')[0],
+      currency,
+      subtotal,
+      fret,
+      assurance: subtotal * 0.005,
+      incoterm,
+      totalWeightBrut: weight,
+      transportMethod: TransportMethod.SEA,
+      items: [
+        {
+          description: "Articles Importés",
+          quantity: 1,
+          unitPrice: subtotal,
+          totalPrice: subtotal,
+          regime: '023',
+          hsCode: 'VARIOUS',
+          weightNet: weight
+        }
+      ]
+    };
+
+    setInvoice(manualData);
+    getExchangeRate(currency).then(rate => {
+      setExchangeRate(rate);
+      calculateCustoms(manualData, rate);
+    });
   };
 
   const handleDownloadPDF = async () => {
@@ -227,18 +215,12 @@ const App: React.FC = () => {
         margin: [10, 10, 10, 10],
         filename: `DouaneCalc_Maroc_${invoice?.invoiceNumber || 'Rapport'}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { 
-          scale: 2, 
-          useCORS: true, 
-          letterRendering: true, 
-          backgroundColor: '#ffffff' 
-        },
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
       await html2pdfLib().set(opt).from(element).save();
     } catch (err) {
       console.error("PDF Error:", err);
-      alert("Erreur lors de la création du PDF.");
     } finally {
       document.body.classList.remove('generating-pdf');
       setIsGenerating(false);
@@ -255,84 +237,92 @@ const App: React.FC = () => {
             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Calcul VAD • Régimes 023/312</p>
           </div>
         </div>
-        
-        <div className="flex items-center gap-4">
-          <button 
-            onClick={handleConnectKey}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-              hasKey 
-                ? 'bg-morocco-green/10 text-morocco-green border border-morocco-green/20' 
-                : 'bg-morocco-red text-white shadow-lg animate-pulse'
-            }`}
-          >
-            <div className={`w-2 h-2 rounded-full ${hasKey ? 'bg-morocco-green' : 'bg-white'}`}></div>
-            {hasKey ? 'Gemini Connecté' : 'Connecter API (Requis)'}
-          </button>
-          <ThemeToggle />
-        </div>
+        <ThemeToggle />
       </header>
 
       <main className="max-w-7xl mx-auto grid lg:grid-cols-12 gap-8 print:block">
         <div className="lg:col-span-4 space-y-6 no-print">
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-            <h2 className="text-xs font-black uppercase tracking-widest mb-4 text-slate-400">Importer Facture</h2>
-            <div className={`relative border-2 border-dashed rounded-2xl p-10 transition-all group cursor-pointer text-center bg-slate-50 dark:bg-slate-800/20 ${!hasKey ? 'border-red-200' : 'border-slate-200 dark:border-slate-800 hover:border-morocco-red'}`}>
-              <input 
-                type="file" 
-                accept="image/*,application/pdf" 
-                onChange={handleFileUpload} 
-                className="absolute inset-0 opacity-0 cursor-pointer z-10" 
-              />
-              <div className="space-y-3">
-                <svg xmlns="http://www.w3.org/2000/svg" className={`h-10 w-10 mx-auto transition-colors ${!hasKey ? 'text-red-300' : 'text-slate-300 group-hover:text-morocco-red'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                </svg>
-                <p className={`text-xs font-black uppercase ${!hasKey ? 'text-red-500' : 'text-slate-500'}`}>
-                  {hasKey ? 'Scanner PDF / Image' : 'Connecter API pour Scanner'}
-                </p>
+            <h2 className="text-xs font-black uppercase tracking-widest mb-4 text-slate-400">Calculateur Douane</h2>
+            
+            <div className="space-y-4">
+              <div className="relative border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl p-6 hover:border-morocco-red transition-all group cursor-pointer text-center bg-slate-50 dark:bg-slate-800/20">
+                <input type="file" accept="image/*,application/pdf" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
+                <div className="space-y-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-slate-300 group-hover:text-morocco-red mx-auto transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  <p className="text-[10px] font-black uppercase text-slate-500">Auto-Scan AI</p>
+                </div>
               </div>
+
+              <div className="text-center">
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Ou</span>
+              </div>
+
+              <button 
+                onClick={() => { setIsManualMode(true); setInvoice(null); setResults(null); }}
+                className="w-full py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:scale-[1.02] transition-all"
+              >
+                Saisie Manuelle (Gratuit)
+              </button>
             </div>
           </div>
 
-          {!hasKey && (
-            <div className="p-4 bg-red-50 dark:bg-red-900/10 rounded-2xl border border-red-100 dark:border-red-900/20">
-              <p className="text-[10px] font-black uppercase text-red-600 dark:text-red-400 mb-2">Clé API Gratuite Requise</p>
-              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed mb-4">
-                Pour utiliser ce service gratuitement, veuillez cliquer sur le bouton rouge en haut pour lier votre compte Google AI Studio.
-              </p>
-              <a 
-                href="https://ai.google.dev/gemini-api/docs/billing" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-[9px] uppercase font-bold text-morocco-red hover:underline"
-              >
-                Documentation Facturation (Offre Gratuite)
-              </a>
-            </div>
-          )}
-
-          {invoice && (
-            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Cours de Change (1 {invoice.currency} = ? MAD)</label>
-              <input 
-                type="number" 
-                step="0.001"
-                value={exchangeRate} 
-                onChange={handleRateChange}
-                className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-3 font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-morocco-red outline-none"
-              />
+          {isManualMode && !invoice && (
+            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800 animate-in fade-in slide-in-from-bottom-2">
+              <h3 className="text-xs font-black uppercase text-slate-400 mb-4">Détails de la Facture</h3>
+              <form onSubmit={handleManualSubmit} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Subtotal (FOB)</label>
+                    <input name="subtotal" type="number" step="0.01" required className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-2 text-sm font-bold" placeholder="0.00" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Devise</label>
+                    <select name="currency" className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-2 text-sm font-bold">
+                      <option value="EUR">EUR</option>
+                      <option value="USD">USD</option>
+                      <option value="GBP">GBP</option>
+                      <option value="CNY">CNY</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Fret Facturé</label>
+                    <input name="fret" type="number" step="0.01" required className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-2 text-sm font-bold" placeholder="0.00" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Poids Brut (KG)</label>
+                    <input name="weight" type="number" step="0.1" required className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-2 text-sm font-bold" placeholder="0.0" />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Incoterm</label>
+                  <select name="incoterm" className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-2 text-sm font-bold">
+                    <option value="FOB">FOB</option>
+                    <option value="CFR">CFR</option>
+                    <option value="CIF">CIF</option>
+                    <option value="EXW">EXW</option>
+                  </select>
+                </div>
+                <button type="submit" className="w-full py-3 bg-morocco-red text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-morocco-red/90 transition-colors">
+                  Calculer la VAD
+                </button>
+              </form>
             </div>
           )}
 
           {loading && (
             <div className="bg-white dark:bg-slate-900 rounded-3xl p-10 shadow-sm text-center border border-morocco-red/10">
               <div className="w-8 h-8 border-4 border-morocco-red border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-              <p className="text-[10px] font-black uppercase text-morocco-red">Analyse ADII Intelligente...</p>
+              <p className="text-[10px] font-black uppercase text-morocco-red">Analyse ADII...</p>
             </div>
           )}
 
           {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/50 rounded-2xl p-6 text-red-600 dark:text-red-400 text-xs font-bold leading-relaxed">
+            <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 text-amber-700 dark:text-amber-400 text-[10px] font-bold leading-relaxed">
               {error}
             </div>
           )}
@@ -341,16 +331,16 @@ const App: React.FC = () => {
         </div>
 
         <div className="lg:col-span-8">
-          {!results && !loading && (
+          {!results && !loading && !isManualMode && (
             <div className="h-full min-h-[400px] flex flex-col items-center justify-center text-center p-12 bg-white/40 dark:bg-slate-900/40 rounded-[2.5rem] border border-dashed border-slate-300 dark:border-slate-800">
                <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-6">
                  <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                  </svg>
                </div>
-               <h3 className="text-lg font-black uppercase text-slate-900 dark:text-white mb-2">Calculateur de Valeur à Déclarer</h3>
+               <h3 className="text-lg font-black uppercase text-slate-900 dark:text-white mb-2">Calculateur VAD Maroc</h3>
                <p className="text-slate-500 text-sm max-w-sm">
-                 Téléchargez votre facture. L'IA extrait automatiquement les articles, poids et incoterms pour le calcul douanier marocain.
+                 Générez votre rapport de Valeur à Déclarer instantanément. Utilisez l'IA ou saisissez les montants manuellement.
                </p>
             </div>
           )}
@@ -366,7 +356,7 @@ const App: React.FC = () => {
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                   </svg>
-                  {isGenerating ? "Impression..." : "Générer Rapport A4"}
+                  {isGenerating ? "Impression..." : "Exporter Rapport A4"}
                 </button>
               </div>
               <CustomsReport invoice={invoice} results={results} />
