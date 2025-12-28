@@ -21,8 +21,13 @@ export const getExchangeRate = async (from: string, to: string = 'MAD'): Promise
  * Uses Gemini 3 Flash to analyze the invoice image/PDF.
  */
 export const extractInvoiceData = async (base64Image: string, mimeType: string): Promise<InvoiceData> => {
-  // CRITICAL: Create new instance inside function to use the most up-to-date API key
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // CRITICAL: Ensure fresh instance with current key
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    throw new Error("Clé API absente. Veuillez cliquer sur 'Connecter API'.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
   
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',

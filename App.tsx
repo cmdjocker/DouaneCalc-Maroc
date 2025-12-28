@@ -26,12 +26,15 @@ const App: React.FC = () => {
   const [exchangeRate, setExchangeRate] = useState<number>(10.5);
   const [hasKey, setHasKey] = useState<boolean>(false);
 
-  // Check for existing API key selection
+  // Check for existing API key selection or environment key
   useEffect(() => {
     const checkKey = async () => {
+      const platformKey = !!process.env.API_KEY;
       if ((window as any).aistudio) {
         const selected = await (window as any).aistudio.hasSelectedApiKey();
-        setHasKey(selected);
+        setHasKey(selected || platformKey);
+      } else {
+        setHasKey(platformKey);
       }
     };
     checkKey();
@@ -41,12 +44,16 @@ const App: React.FC = () => {
     if ((window as any).aistudio) {
       try {
         await (window as any).aistudio.openSelectKey();
-        setHasKey(true); // Assume success per instructions
+        // GUIDELINE: Assume success after triggering and proceed
+        setHasKey(true);
         setError(null);
+        return true;
       } catch (err) {
         console.error("Failed to open key selection:", err);
+        return false;
       }
     }
+    return false;
   };
 
   const calculateCustoms = useCallback((data: InvoiceData, rate: number) => {
@@ -157,12 +164,13 @@ const App: React.FC = () => {
   }, []);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (!hasKey) {
-      await handleConnectKey();
-    }
-
     const file = event.target.files?.[0];
     if (!file) return;
+
+    if (!hasKey) {
+      const connected = await handleConnectKey();
+      if (!connected) return;
+    }
 
     setLoading(true);
     setError(null);
@@ -180,11 +188,15 @@ const App: React.FC = () => {
         calculateCustoms(data, rate);
       } catch (err: any) {
         console.error("Analysis error:", err);
-        if (err.message?.includes("API Key")) {
+        const msg = err.message || "";
+        
+        // GUIDELINE: Reset if entity not found
+        if (msg.includes("Requested entity was not found") || msg.includes("API Key")) {
           setHasKey(false);
-          setError("Clé API non trouvée. Veuillez cliquer sur 'Connecter API' en haut.");
+          setError("Session API expirée ou clé invalide. Veuillez reconnecter.");
+          await handleConnectKey();
         } else {
-          setError(err.message || "L'analyse a échoué. Vérifiez la qualité de l'image.");
+          setError(msg || "L'analyse a échoué. Vérifiez la qualité de l'image.");
         }
       } finally {
         setLoading(false);
@@ -254,7 +266,7 @@ const App: React.FC = () => {
             }`}
           >
             <div className={`w-2 h-2 rounded-full ${hasKey ? 'bg-morocco-green' : 'bg-white'}`}></div>
-            {hasKey ? 'Gemini Connecté' : 'Connecter API Gemini'}
+            {hasKey ? 'Gemini Connecté' : 'Connecter API (Requis)'}
           </button>
           <ThemeToggle />
         </div>
@@ -264,7 +276,7 @@ const App: React.FC = () => {
         <div className="lg:col-span-4 space-y-6 no-print">
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
             <h2 className="text-xs font-black uppercase tracking-widest mb-4 text-slate-400">Importer Facture</h2>
-            <div className="relative border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl p-10 hover:border-morocco-red transition-all group cursor-pointer text-center bg-slate-50 dark:bg-slate-800/20">
+            <div className={`relative border-2 border-dashed rounded-2xl p-10 transition-all group cursor-pointer text-center bg-slate-50 dark:bg-slate-800/20 ${!hasKey ? 'border-red-200' : 'border-slate-200 dark:border-slate-800 hover:border-morocco-red'}`}>
               <input 
                 type="file" 
                 accept="image/*,application/pdf" 
@@ -272,21 +284,30 @@ const App: React.FC = () => {
                 className="absolute inset-0 opacity-0 cursor-pointer z-10" 
               />
               <div className="space-y-3">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-slate-300 group-hover:text-morocco-red mx-auto transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" className={`h-10 w-10 mx-auto transition-colors ${!hasKey ? 'text-red-300' : 'text-slate-300 group-hover:text-morocco-red'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
-                <p className="text-xs font-black text-slate-500 uppercase">Scanner PDF / Image</p>
-                <p className="text-[9px] text-slate-400 font-bold uppercase">Analyse 023 / 312 Automatique</p>
+                <p className={`text-xs font-black uppercase ${!hasKey ? 'text-red-500' : 'text-slate-500'}`}>
+                  {hasKey ? 'Scanner PDF / Image' : 'Connecter API pour Scanner'}
+                </p>
               </div>
             </div>
           </div>
 
           {!hasKey && (
             <div className="p-4 bg-red-50 dark:bg-red-900/10 rounded-2xl border border-red-100 dark:border-red-900/20">
-              <p className="text-[10px] font-black uppercase text-red-600 dark:text-red-400 mb-2">Clé API Requise</p>
-              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                Pour utiliser ce service gratuitement, connectez votre propre clé API Google AI Studio via le bouton en haut à droite.
+              <p className="text-[10px] font-black uppercase text-red-600 dark:text-red-400 mb-2">Clé API Gratuite Requise</p>
+              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed mb-4">
+                Pour utiliser ce service gratuitement, veuillez cliquer sur le bouton rouge en haut pour lier votre compte Google AI Studio.
               </p>
+              <a 
+                href="https://ai.google.dev/gemini-api/docs/billing" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-[9px] uppercase font-bold text-morocco-red hover:underline"
+              >
+                Documentation Facturation (Offre Gratuite)
+              </a>
             </div>
           )}
 
@@ -306,12 +327,12 @@ const App: React.FC = () => {
           {loading && (
             <div className="bg-white dark:bg-slate-900 rounded-3xl p-10 shadow-sm text-center border border-morocco-red/10">
               <div className="w-8 h-8 border-4 border-morocco-red border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-              <p className="text-[10px] font-black uppercase text-morocco-red">Analyse Intelligente ADII...</p>
+              <p className="text-[10px] font-black uppercase text-morocco-red">Analyse ADII Intelligente...</p>
             </div>
           )}
 
           {error && (
-            <div className="bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/20 rounded-2xl p-6 text-red-600 dark:text-red-400 text-xs font-bold leading-relaxed">
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/50 rounded-2xl p-6 text-red-600 dark:text-red-400 text-xs font-bold leading-relaxed">
               {error}
             </div>
           )}
@@ -327,9 +348,9 @@ const App: React.FC = () => {
                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                  </svg>
                </div>
-               <h3 className="text-lg font-black uppercase text-slate-900 dark:text-white mb-2">Prêt pour l'import</h3>
+               <h3 className="text-lg font-black uppercase text-slate-900 dark:text-white mb-2">Calculateur de Valeur à Déclarer</h3>
                <p className="text-slate-500 text-sm max-w-sm">
-                 Déposez votre facture. L'IA calculera automatiquement la VAD marocaine en séparant les articles (023) et les emballages (312).
+                 Téléchargez votre facture. L'IA extrait automatiquement les articles, poids et incoterms pour le calcul douanier marocain.
                </p>
             </div>
           )}
@@ -345,7 +366,7 @@ const App: React.FC = () => {
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                   </svg>
-                  {isGenerating ? "Génération PDF..." : "Exporter Rapport A4"}
+                  {isGenerating ? "Impression..." : "Générer Rapport A4"}
                 </button>
               </div>
               <CustomsReport invoice={invoice} results={results} />
